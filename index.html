@@ -3,151 +3,204 @@
 <head>
     <meta charset="UTF-8">
     <title>Wildes Bayern - Anzeige Generator</title>
-    <!-- Include docx.js for client-side Word document generation -->
+    <!-- Word Document Generation Library -->
     <script src="https://unpkg.com/docx@8.5.0/build/index.js"></script>
+    <!-- Leaflet Mapping Library for Guaranteed Map Loading -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
-        body { font-family: Arial, sans-serif; margin: 30px; max-width: 800px; line-height: 1.6; }
-        .section { margin-bottom: 20px; padding: 15px; border: 1px solid #ccc; border-radius: 5px; }
-        label { display: block; font-weight: bold; margin-top: 10px; }
-        input, select, textarea { width: 100%; padding: 8px; margin-top: 5px; box-sizing: border-box; }
-        button { background-color: #0066cc; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; margin-top: 15px; }
-        button:hover { background-color: #004c99; }
-        #map-container { width: 100%; height: 300px; margin-top: 15px; background: #eee; }
+        body { font-family: Arial, sans-serif; margin: 30px auto; max-width: 900px; line-height: 1.6; background-color: #f9f9f9; }
+        .section { background: white; margin-bottom: 20px; padding: 25px; border: 1px solid #ddd; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        h1 { color: #2c3e50; }
+        label { display: block; font-weight: bold; margin-top: 15px; color: #333; }
+        input[type="text"], input[type="password"], select, textarea { width: 100%; padding: 10px; margin-top: 5px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+        button { background-color: #005f26; color: white; padding: 12px 20px; border: none; border-radius: 4px; cursor: pointer; margin-top: 15px; font-weight: bold; }
+        button:hover { background-color: #00421a; }
+        .secondary-btn { background-color: #6c757d; }
+        .secondary-btn:hover { background-color: #5a6268; }
+        #map { width: 100%; height: 350px; margin-top: 15px; border-radius: 4px; border: 1px solid #ccc; }
+        .coord-list { background: #f1f1f1; padding: 10px; margin-top: 10px; border-radius: 4px; }
+        .coord-item { margin-bottom: 5px; font-family: monospace; }
     </style>
 </head>
 <body>
 
     <h1>Wildes Bayern e.V. - Anzeige Generator</h1>
-    <p>Automatisierte Erstellung von Anzeigen wegen verfallener Zäune.</p>
 
-    <!-- STEP 1: LOGIN -->
     <div class="section">
-        <h3>1. GeodatenOnline / BayernAtlas Plus Login</h3>
-        <label for="username">Benutzername (GDO):</label>
-        <input type="text" id="username" placeholder="z.B. wb_user123">
-        <label for="password">Passwort:</label>
+        <h3>1. LDBV GeodatenOnline Login</h3>
+        <p style="font-size: 0.9em; color: #555;">(Für die OGC API Flurstückabfrage)</p>
+        <label>Benutzername:</label>
+        <input type="text" id="username" placeholder="GDO Benutzer">
+        <label>Passwort:</label>
         <input type="password" id="password" placeholder="••••••••">
     </div>
 
-    <!-- STEP 2: INPUT COORDINATES -->
     <div class="section">
-        <h3>2. Fundort & Datenabfrage</h3>
-        <label for="coords">Koordinaten (Breitengrad, Längengrad):</label>
-        <input type="text" id="coords" placeholder="z.B. 48.540385, 11.730074">
-        <button onclick="fetchGisData()">Daten abfragen & Karte laden</button>
-
-        <!-- The 2026 BayernAtlas Web Component will render here -->
-        <div id="map-container">
-            <p style="text-align:center; padding-top:120px; color:#666;">Karte lädt nach Koordinateneingabe...</p>
-        </div>
-    </div>
-
-    <!-- STEP 3: AUTOMATED OUTPUTS (Editable if API fails) -->
-    <div class="section">
-        <h3>3. Automatisch ermittelte Daten (Prüfen)</h3>
-        <label for="flurnummer">Flurnummer & Gemarkung:</label>
-        <input type="text" id="flurnummer" placeholder="Wird automatisch geladen...">
+        <h3>2. Fundorte erfassen</h3>
+        <label>Koordinaten (z.B. 48.540385, 11.730074):</label>
+        <input type="text" id="coordInput" placeholder="Breitengrad, Längengrad">
+        <button onclick="addCoordinate()">Koordinate hinzufügen & Karte zentrieren</button>
         
-        <label for="plz">PLZ & Ort:</label>
-        <input type="text" id="plz" placeholder="Wird automatisch geladen...">
-
-        <label for="protected_area">Schutzgebiet-Status:</label>
-        <select id="protected_area">
-            <option value="standard">Normales Waldgebiet / Außenbereich</option>
-            <option value="spa">In/An einem SPA (Vogelschutz) / FFH-Gebiet</option>
-        </select>
+        <div id="coordDisplay" class="coord-list">Noch keine Koordinaten erfasst.</div>
+        <div id="map"></div>
     </div>
 
-    <!-- STEP 4: GENERATE DOCUMENT -->
     <div class="section">
-        <h3>4. Dokument generieren</h3>
-        <button onclick="generateWordDocument()" style="background-color: #28a745; font-size: 1.1em;">Anzeige als .docx herunterladen</button>
+        <h3>3. Situationsdetails & Schutzstatus</h3>
+        <label>PLZ & Ort (wird für Behördenzuweisung genutzt):</label>
+        <input type="text" id="plzOrt" placeholder="z.B. 84072 Au in der Hallertau">
+
+        <label>Flurnummern (durch Komma getrennt):</label>
+        <input type="text" id="flurnummer" placeholder="z.B. 679, 680">
+
+        <label>Schutzgebiet-Status:</label>
+        <select id="protected_area">
+            <option value="standard">Normales Waldgebiet (Standard Text)</option>
+            <option value="spa">Liegt im/am FFH- oder SPA-Gebiet (Erweiterter § 329 StGB Text)</option>
+        </select>
+
+        <label>Fotobeweise anhängen (Optional, Mehrfachauswahl möglich):</label>
+        <input type="file" id="photoUpload" accept="image/png, image/jpeg" multiple>
+    </div>
+
+    <div class="section">
+        <h3>4. Anzeige generieren</h3>
+        <button onclick="generateDocument()" style="background-color: #28a745; font-size: 1.1em; width: 100%;">Anzeige als .docx herunterladen</button>
     </div>
 
     <script>
-        // GLOBAL STATE
-        let routingData = { authority: "Landratsamt", address: "Straße PLZ Stadt" };
+        // Initialize Map
+        let map = L.map('map').setView([48.1351, 11.5820], 7); // Default to Bavaria
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
 
-        // 1. FETCH DATA FROM BAYERNATLAS PLUS / GEODATENONLINE
-        async function fetchGisData() {
-            const coordsInput = document.getElementById('coords').value;
-            const user = document.getElementById('username').value;
-            const pass = document.getElementById('password').value;
+        let coordinatesList = [];
+        let photoDataArray = [];
 
-            if (!coordsInput || !user || !pass) {
-                alert("Bitte Zugangsdaten und Koordinaten eingeben!");
-                return;
-            }
+        // Add Coordinate and update map
+        function addCoordinate() {
+            const input = document.getElementById('coordInput').value;
+            if (!input.includes(',')) { alert("Bitte gültiges Format verwenden (Lat, Lng)"); return; }
+            
+            const [lat, lng] = input.split(',').map(c => parseFloat(c.trim()));
+            coordinatesList.push(`${lat}, ${lng}`);
+            
+            // Render Marker
+            L.marker([lat, lng]).addTo(map);
+            map.setView([lat, lng], 15);
+            
+            // Update List UI
+            document.getElementById('coordDisplay').innerHTML = coordinatesList.map(c => `<div class="coord-item">📍 ${c}</div>`).join('');
+            document.getElementById('coordInput').value = '';
 
-            const [lat, lng] = coordsInput.split(',').map(c => c.trim());
+            // Auto-fetch PLZ using free OpenStreetMap Nominatim API
+            fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`)
+                .then(res => res.json())
+                .then(data => {
+                    if(data.address) {
+                        const plz = data.address.postcode || "";
+                        const town = data.address.city || data.address.town || data.address.village || "";
+                        document.getElementById('plzOrt').value = `${plz} ${town}`;
+                    }
+                }).catch(e => console.log("Nominatim fetch failed"));
 
-            // Update the 2026 BayernAtlas Web Component dynamically
-            const mapContainer = document.getElementById('map-container');
-            mapContainer.innerHTML = `<bayernatlas-map center="${lat},${lng}" zoom="16" layers="alkis_flurkarte,vogel_spa"></bayernatlas-map>`;
-
-            // REVERSE GEOCODING & FLURNUMMER LOOKUP via LDBV OGC API Features
-            // Note: HTTP Basic Auth header generated from credentials provided by user
-            const authHeader = 'Basic ' + btoa(user + ':' + pass);
-
-            try {
-                // Point calculation & dynamic OGC API features lookup
-                // This targets the Bavarian open data / GDO servers securely via client browser
-                document.getElementById('flurnummer').value = "Lade Flurnummer...";
-                document.getElementById('plz').value = "Lade PLZ...";
-
-                // SIMULATED API RESPONSE FOR DEMO PURPOSES
-                // In production, fetch() requests hit the official LDBV endpoint using authHeader
-                setTimeout(() => {
-                    document.getElementById('flurnummer').value = "Flurnummer 679";
-                    document.getElementById('plz').value = "84072 Au in der Hallertau";
-                    document.getElementById('protected_area').value = "spa"; // Auto-detected SPA
-                    
-                    // Route to correct Landratsamt based on postal database built internally
-                    routingData.authority = "Landratsamt Freising";
-                    routingData.address = "Landshuter Str. 31\n85356 Freising";
-                }, 1500);
-
-            } catch (error) {
-                alert("Fehler bei der API-Abfrage. Bitte Daten manuell prüfen.");
-                console.error(error);
-            }
+            // Note: Direct LDBV WFS Fetching for Flurnummer requires specific proxy setups 
+            // due to CORS if done pure-frontend. Users can manually type the Flurnummer for now.
         }
 
-        // 2. GENERATE COMPLIANT DOCX (Matches Wildes Bayern Templates)
-        function generateWordDocument() {
-            const coords = document.getElementById('coords').value;
-            const flurnummer = document.getElementById('flurnummer').value;
-            const plzOrt = document.getElementById('plz').value;
+        // Process Image Uploads to Base64 for docx injection
+        document.getElementById('photoUpload').addEventListener('change', function(event) {
+            photoDataArray = [];
+            const files = event.target.files;
+            for (let i = 0; i < files.length; i++) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    photoDataArray.push({
+                        data: e.target.result.split(',')[1],
+                        width: 400,
+                        height: 300
+                    });
+                };
+                reader.readAsDataURL(files[i]);
+            }
+        });
+
+        // Generate Full Word Document
+        async function generateDocument() {
+            const plzOrt = document.getElementById('plzOrt').value || "UNBEKANNTER ORT";
+            const flurnummer = document.getElementById('flurnummer').value || "UNBEKANNTE FLURNUMMER";
             const isSpa = document.getElementById('protected_area').value === 'spa';
+            const coordString = coordinatesList.join('; ');
 
-            // Document structural building logic using docx.js library
-            const { Document, Packer, Paragraph, TextRun, HeadingLevel } = docx;
+            const { Document, Packer, Paragraph, TextRun, ImageRun, AlignmentType, HeadingLevel } = docx;
 
+            // Generate Photo Elements
+            const photoParagraphs = photoDataArray.length > 0 ? [
+                new Paragraph({ text: "\nAnlage: Fotodokumentation", heading: HeadingLevel.HEADING_2, pageBreakBefore: true })
+            ] : [];
+
+            photoDataArray.forEach(img => {
+                photoParagraphs.push(new Paragraph({
+                    children: [new ImageRun({ data: Uint8Array.from(atob(img.data), c => c.charCodeAt(0)), transformation: { width: img.width, height: img.height } })],
+                    alignment: AlignmentType.CENTER
+                }));
+                photoParagraphs.push(new Paragraph({ text: "\n" }));
+            });
+
+            // Build Document
             const doc = new Document({
                 sections: [{
                     properties: {},
                     children: [
-                        new Paragraph({ text: routingData.authority, heading: HeadingLevel.HEADING_2 }),
-                        new Paragraph({ text: routingData.address }),
-                        new Paragraph({ text: "\nMünchen, " + new Date().toLocaleDateString('de-DE') }),
-                        new Paragraph({ text: "\n\nAnzeige wegen des Verdachts von Vergehen gegen Waldgesetz, Kreislaufwirtschaftsgesetz, Naturschutzgesetz und Tierschutzgesetz durch nicht ordnungsgemäß entsorgtes Zaunmaterial in " + plzOrt, bold: true }),
-                        new Paragraph({ text: "\nSehr geehrte Damen und Herren,\n\nnach einem Hinweis aus der Bevölkerung möchte ich mich gerne an Sie wenden, um zu melden, dass in " + plzOrt + ", " + flurnummer + " (Koordinaten: " + coords + ") altes Zaunmaterial am Boden liegt." }),
+                        new Paragraph({ text: "Wildes Bayern e.V.", bold: true }),
+                        new Paragraph({ text: "Hirschbergstraße 1\n83714 Miesbach" }),
+                        new Paragraph({ text: "\nMünchen, den " + new Date().toLocaleDateString('de-DE'), alignment: AlignmentType.RIGHT }),
                         
-                        // Dynamic logic injecting strict text sections based on SPA checkbox criteria
-                        ...(isSpa ? [
-                            new Paragraph({ text: "\nNaturschutzrechtliche Bedenken (SPA-Gebiet)", bold: true }),
-                            new Paragraph({ text: "Das Gebiet liegt in/an einem SPA-Gebiet. Wir sind in Sorge, dass durch das Zaunmaterial bedrohte und geschützte Tierarten (z.B. Waldschnepfen, Raufußhühner) gestört oder getötet werden. Die Schädigung dieser Lebensräume ist nach § 329 StGB strafbewehrt." })
-                        ] : [
-                            new Paragraph({ text: "\nVermuteter Verstoß gegen das Waldgesetz", bold: true }),
-                            new Paragraph({ text: "Zäunungen dienen dem Schutz von Kulturen. Sobald der Zaun nicht mehr seinem Schutzzweck entspricht, wird er automatisch zu Abfall und muss gemäß § 3 Kreislaufwirtschaftsgesetz entsorgt werden." })
-                        ]),
+                        new Paragraph({ text: "\nUntere Naturschutzbehörde", bold: true }),
+                        new Paragraph({ text: "Landratsamt" }),
+                        
+                        new Paragraph({ 
+                            text: "\nAnzeige wegen des Verdachts von Vergehen gegen Waldgesetz, Kreislaufwirtschaftsgesetz, Naturschutzgesetz und Tierschutzgesetz durch nicht ordnungsgemäß entsorgtes Zaunmaterial in " + plzOrt, 
+                            bold: true, 
+                            heading: HeadingLevel.HEADING_3 
+                        }),
 
-                        new Paragraph({ text: "\nMit freundlichen Grüßen,\n\nWildes Bayern e.V." })
+                        new Paragraph({ text: "\nSehr geehrte Damen und Herren,\n" }),
+                        
+                        new Paragraph({ text: "Nach einem Hinweis aus der Bevölkerung möchte ich mich gerne an Sie wenden, um zu melden, dass in " + plzOrt + ", Flurnummer(n) " + flurnummer + " (Koordinaten: " + coordString + ") altes Zaunmaterial am Boden liegt." }),
+                        
+                        new Paragraph({ text: "\nAls Mitarbeiterin des anerkannten Naturschutzvereins Wildes Bayern e.V. bin ich besorgt, dass durch dieses unsachgemäß im Wald liegende Zaunmaterial eine erhebliche Gefährdung für bodenbrütende Vogelarten, sowie Arten, die am Boden nach Nahrung suchen, wie zum Beispiel Spechte, besteht und eine konkrete Verletzungsgefahr für Wildtiere, vor allem Jungtiere, ausgeht. Ich bitte die Behörde, den Sachverhalt und die vorgebrachten Bedenken zu prüfen und gegebenenfalls einzuschreiten." }),
+
+                        new Paragraph({ text: "\nSachverhalt", bold: true }),
+                        new Paragraph({ text: "Das Zaunmaterial dient keinem Zweck mehr und ist deshalb als Abfall zu betrachten und zu entsorgen. Es ist flächig in der Landschaft platziert ohne ersichtlichen Schutzzweck. Teilweise sind Zaunbereiche bereits mit dem Boden verwachsen." }),
+
+                        new Paragraph({ text: "\nVermuteter Verstoß gegen das Waldgesetz und Kreislaufwirtschaftsgesetz", bold: true }),
+                        new Paragraph({ text: "Zäunungen dienen zum Schutz von Pflanzen, bis zu dem Zeitpunkt, ab dem diese dem Äser von Schalenwild (Reh, Rotwild, Gams) entwachsen sind. Sobald der Zaun nicht mehr seinem Schutzzweck entspricht, die Jungbäume den Schutz durch den Zaun nicht mehr brauchen, muss der Zaun, entspr. § 3 des Kreislaufwirtschaftsgesetzes abgebaut und entsorgt werden." }),
+                        new Paragraph({ text: "\nIn Verlautbarungen des Bayerischen Staatsministeriums für Ernährung, Landwirtschaft und Forsten wird ausdrücklich der private Waldbesitzer darauf hingewiesen: „Ein Wildschutzzaun verliert seine Berechtigung auch dann, wenn er beschädigt oder verfallen ist... Solche Zäune werden nach dem Gesetz ab diesem Moment automatisch zu Abfall... Zäune lediglich zu Boden zu drücken und im Wald zu belassen ist verboten.“" }),
+
+                        new Paragraph({ text: "\nNaturschutzrechtliche Bedenken", bold: true }),
+                        new Paragraph({ text: "Wir sind sehr in Sorge, dass durch das Zaunmaterial bedrohte und geschützte Tierarten in den betroffenen Gebieten gestört, verletzt und getötet werden. Die in dem Gebiet vorkommenden bodenbrütenden Vogelarten führen ab Frühjahr und Frühsommer die noch flugunfähigen Jungvögel auf Futtersuche durch das Gelände." }),
+                        
+                        // SPA Custom Injection
+                        ...(isSpa ? [
+                            new Paragraph({ text: "\nDas Gebiet liegt zudem in unmittelbarer Nähe zu einem FFH / SPA (Vogelschutz) Gebiet, das explizit zum Schutz dieser Vogelarten ausgewiesen wurde. Vogelarten aus diesem Gebiet können sich jederzeit auch auf den Flächen mit dem Zaunmaterial aufhalten. Die Schädigung von derart besonders geschützten Arten, wozu auch die Verschlechterung der Verhältnisse in deren Lebensraum zählen kann, wird in § 329 StGB strafbewehrt.", bold: true })
+                        ] : []),
+
+                        new Paragraph({ text: "\nTierschutzrechtliche Bedenken", bold: true }),
+                        new Paragraph({ text: "Ebenso höchst besorgt sind wir, dass durch das Vorgehen billigend oder vorsätzlich in Kauf genommen wird, dass wildlebenden Tieren anhaltende und vermeidbare Schmerzen in tierquälerischer Weise und ohne vernünftigen Grund zugefügt werden. Aus diesem Grund liegt meines Erachtens ein Verstoß gegen die Vorschriften des § 17 des TierschG vor. Das unbeabsichtigte Töten von Tieren ohne vernünftigen Grund, sowie die Verursachung von unnötigem Tierleid, wird durch das nicht entfernte Zaunmaterial billigend oder gar vorsätzlich in Kauf genommen." }),
+                        
+                        new Paragraph({ text: "\nIch bitte daher die Untere Naturschutzbehörde zu ermitteln, ob in dem geschilderten Sachverhalt strafrechtliche Tatbestände und Ordnungswidrigkeiten berührt werden und ersuche gegebenenfalls entsprechend tätig zu werden." }),
+
+                        new Paragraph({ text: "\nMit freundlichen Grüßen,\n\nEsther Zimmermann\nWildes Bayern e.V." }),
+
+                        // Append Photos Array
+                        ...photoParagraphs
                     ],
                 }],
             });
 
-            // Trigger instantaneous browser download natively 
             Packer.toBlob(doc).then(blob => {
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
