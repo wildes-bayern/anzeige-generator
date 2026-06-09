@@ -91,7 +91,6 @@
         // --- 2. EXTRACT ID AND NAME FROM TAGS ---
         function extractSchutzgebietData(tags) {
             const name = tags.name || tags['name:de'] || "";
-            // Look for official Bavarian ID / EU ID tags
             const id = tags.ref || tags['ref:EU'] || tags['natura2000:ref'] || tags.id || "";
             return { name, id };
         }
@@ -127,7 +126,7 @@
                 }
             } catch(e) { console.error("Geocoding failed"); }
 
-            // Fetch Protected Area Check (Overpass)
+            // Fetch Protected Area Check (Overpass POST Request - Bulletproof)
             const statusBox = document.getElementById('protectedAreaStatus');
             statusBox.innerText = "⏳ Prüfe Schutzgebiete (Bitte warten)...";
             statusBox.className = "status-badge status-loading";
@@ -135,33 +134,25 @@
             document.getElementById('sgId').value = "";
             
             try {
-                const queryInside = `[out:json][timeout:10];is_in(${lat},${lng});rel(pivot)["boundary"="protected_area"];out tags limit 1;`;
-                const resInside = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(queryInside)}`);
-                const dataInside = await resInside.json();
+                // Simplified to a single, fast 5km sweep
+                const query = `[out:json][timeout:15];(nwr["boundary"="protected_area"](around:5000,${lat},${lng});nwr["leisure"="nature_reserve"](around:5000,${lat},${lng}););out tags limit 1;`;
                 
-                if (dataInside.elements && dataInside.elements.length > 0) {
-                    const sgData = extractSchutzgebietData(dataInside.elements[0].tags);
+                const res = await fetch(`https://overpass-api.de/api/interpreter`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: "data=" + encodeURIComponent(query)
+                });
+                
+                const data = await res.json();
+                
+                if (data.elements && data.elements.length > 0) {
+                    const sgData = extractSchutzgebietData(data.elements[0].tags);
                     document.getElementById('sgName').value = sgData.name;
                     document.getElementById('sgId').value = sgData.id;
 
-                    statusBox.innerText = `🔴 Liegt DIREKT IM Schutzgebiet: ${sgData.name} (Erweiterter Text wird genutzt)`;
-                    statusBox.className = "status-badge status-danger";
-                    document.getElementById('isProtectedArea').value = "inside";
-                    return; 
-                } 
-
-                const queryNear = `[out:json][timeout:15];(way["boundary"="protected_area"](around:5000,${lat},${lng});relation["boundary"="protected_area"](around:5000,${lat},${lng}););out tags limit 1;`;
-                const resNear = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(queryNear)}`);
-                const dataNear = await resNear.json();
-
-                if (dataNear.elements && dataNear.elements.length > 0) {
-                    const sgData = extractSchutzgebietData(dataNear.elements[0].tags);
-                    document.getElementById('sgName').value = sgData.name;
-                    document.getElementById('sgId').value = sgData.id;
-
-                    statusBox.innerText = `🟠 Liegt im 5KM UMKREIS von: ${sgData.name} (Erweiterter Text wird genutzt)`;
+                    statusBox.innerText = `🟠 Schutzgebiet gefunden: ${sgData.name} (Erweiterter Text wird genutzt)`;
                     statusBox.className = "status-badge status-warning";
-                    document.getElementById('isProtectedArea').value = "near";
+                    document.getElementById('isProtectedArea').value = "true";
                 } else {
                     statusBox.innerText = "✅ Kein Schutzgebiet im 5km Umkreis gefunden (Standard Text).";
                     statusBox.className = "status-badge status-safe";
@@ -169,7 +160,8 @@
                 }
             } catch (e) {
                 statusBox.innerText = "⚠️ Fehler bei der autom. Prüfung. Standardtext wird verwendet.";
-                statusBox.className = "status-badge status-warning";
+                statusBox.className = "status-badge status-danger";
+                console.error(e);
             }
         }
 
@@ -209,8 +201,7 @@
                 const sgName = document.getElementById('sgName').value;
                 const sgId = document.getElementById('sgId').value;
                 const coordString = coordinatesList.length > 0 ? coordinatesList.join('; ') : "KEINE KOORDINATEN";
-                const protStatus = document.getElementById('isProtectedArea').value;
-                const isSpaOrNear = (protStatus === "inside" || protStatus === "near") || (sgName !== "");
+                const isSpaOrNear = document.getElementById('isProtectedArea').value === "true" || sgName !== "";
 
                 const { Document, Packer, Paragraph, TextRun, ImageRun, AlignmentType, HeadingLevel } = docx;
 
@@ -238,7 +229,6 @@
                     new Paragraph({ text: "Das Zaunmaterial dient keinem Zweck mehr und ist deshalb als Abfall zu betrachten und zu entsorgen." })
                 ];
 
-                // Dynamically build the Schutzgebiet sentence if Name/ID exists
                 if (sgName) {
                     let sgText = `Das Gebiet liegt in unmittelbarer Nähe oder direkt im FFH- und SPF-Gebiet „${sgName}“`;
                     if (sgId) sgText += ` (Gebietsnr. ${sgId})`;
