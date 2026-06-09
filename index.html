@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Wildes Bayern - Anzeige Generator</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/docx/8.5.0/docx.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.js"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
@@ -12,7 +12,6 @@
         h1 { color: #2c3e50; border-bottom: 2px solid #005f26; padding-bottom: 10px; }
         label { display: block; font-weight: bold; margin-top: 15px; color: #333; }
         input[type="text"], textarea { width: 100%; padding: 10px; margin-top: 5px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
-        input[readonly] { background-color: #e9ecef; color: #495057; border: 1px solid #ced4da; }
         button { background-color: #005f26; color: white; padding: 12px 20px; border: none; border-radius: 4px; cursor: pointer; margin-top: 15px; font-weight: bold; width: 100%; }
         button:hover { background-color: #00421a; }
         #map { width: 100%; height: 350px; margin-top: 15px; border-radius: 4px; border: 1px solid #ccc; z-index: 1; }
@@ -21,8 +20,6 @@
         .status-badge { display: inline-block; padding: 8px 12px; border-radius: 4px; font-size: 0.9em; font-weight: bold; margin-top: 5px; width: 100%; box-sizing: border-box; }
         .status-safe { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
         .status-warning { background-color: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
-        .status-danger { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
-        .status-loading { background-color: #e2e3e5; color: #383d41; border: 1px solid #d6d8db; }
         .hint-text { font-size: 0.85em; color: #666; margin-top: 3px; }
         .flex-row { display: flex; gap: 15px; }
         .flex-row > div { flex: 1; }
@@ -78,117 +75,60 @@
 
     <script>
         let map = L.map('map').setView([48.7904, 11.4979], 7);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '© OpenStreetMap'
-        }).addTo(map);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(map);
 
         let coordinatesList = [];
         let photoDataArray = [];
 
-        // --- 2. OFFICIAL BAYERN ATLAS (LFU) WFS API QUERY ---
         async function fetchLfuSchutzgebiet(lat, lng) {
-            // FIXED: Using the exact namespaces and plural forms required by the Bavarian LfU servers
             const layers = ['natur:ffh_gebiete', 'natur:vogelschutzgebiete', 'natur:naturschutzgebiete', 'natur:landschaftsschutzgebiete'];
-            
-            const d = 0.045; // ~5km radius bounding box
+            const d = 0.045;
             const bbox = `${lng - d},${lat - d},${lng + d},${lat + d}`;
             
             for (const layer of layers) {
-                // FIXED: Downgraded to WFS 1.0.0 to strictly enforce correct Longitude/Latitude bounding box order
                 const url = `https://www.lfu.bayern.de/gdi/wfs/natur/schutzgebiete?SERVICE=WFS&VERSION=1.0.0&REQUEST=GetFeature&typeName=${layer}&BBOX=${bbox}`;
-                
                 try {
                     const response = await fetch(url);
                     const text = await response.text();
-                    
-                    if (text.includes('gml:featureMember') || text.includes('wfs:member')) {
-                        const nameMatch = text.match(/<(?:[^:]+:)?name[^>]*>([^<]+)<\//i) || text.match(/<(?:[^:]+:)?bezeichnung[^>]*>([^<]+)<\//i);
-                        const idMatch = text.match(/<(?:[^:]+:)?id_code_bayern[^>]*>([^<]+)<\//i) || text.match(/<(?:[^:]+:)?nummer[^>]*>([^<]+)<\//i) || text.match(/<(?:[^:]+:)?id[^>]*>([^<]+)<\//i);
-
-                        if (nameMatch && nameMatch[1]) {
-                            return {
-                                name: nameMatch[1].trim(),
-                                id: idMatch ? idMatch[1].trim() : "",
-                                type: layer
-                            };
-                        }
+                    if (text.includes('gml:featureMember')) {
+                        const nameMatch = text.match(/<[^>]*name[^>]*>([^<]+)<\//i) || text.match(/<[^>]*bezeichnung[^>]*>([^<]+)<\//i);
+                        const idMatch = text.match(/<[^>]*id_code[^>]*>([^<]+)<\//i) || text.match(/<[^>]*nummer[^>]*>([^<]+)<\//i);
+                        if (nameMatch && nameMatch[1]) return { name: nameMatch[1].trim(), id: idMatch ? idMatch[1].trim() : "" };
                     }
-                } catch (e) {
-                    console.log(`Abfrage für ${layer} fehlgeschlagen.`);
-                }
+                } catch (e) { console.error(e); }
             }
-            return null; 
+            return null;
         }
 
         async function processCoordinates() {
             const input = document.getElementById('coordInput').value;
-            if (!input.includes(',')) { 
-                alert("Bitte gültiges Format verwenden (Breitengrad, Längengrad)"); 
-                return; 
-            }
-            
             const [lat, lng] = input.split(',').map(c => parseFloat(c.trim()));
             coordinatesList.push(`${lat}, ${lng}`);
-            
             L.marker([lat, lng]).addTo(map);
-            L.circle([lat, lng], { radius: 5000, color: '#005f26', fillOpacity: 0.1, weight: 1 }).addTo(map);
             map.setView([lat, lng], 12);
-            
             document.getElementById('coordDisplay').innerHTML = coordinatesList.map(c => `<div class="coord-item">📍 ${c}</div>`).join('');
-            document.getElementById('coordInput').value = '';
-
-            try {
-                const geoRes = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
-                const geoData = await geoRes.json();
-                if(geoData.address) {
-                    const plz = geoData.address.postcode || "";
-                    const town = geoData.address.city || geoData.address.town || geoData.address.village || "";
-                    document.getElementById('plzOrt').value = `${plz} ${town}`.trim();
-                }
-            } catch(e) { console.error("Geocoding failed"); }
-
-            const statusBox = document.getElementById('protectedAreaStatus');
-            statusBox.innerText = "⏳ Lade LfU BayernAtlas Daten (Bitte warten)...";
-            statusBox.className = "status-badge status-loading";
-            document.getElementById('sgName').value = "";
-            document.getElementById('sgId').value = "";
             
             const sgData = await fetchLfuSchutzgebiet(lat, lng);
-            
             if (sgData) {
                 document.getElementById('sgName').value = sgData.name;
                 document.getElementById('sgId').value = sgData.id;
-
-                statusBox.innerText = `🟠 Schutzgebiet gefunden: ${sgData.name} (Erweiterter Text wird genutzt)`;
-                statusBox.className = "status-badge status-warning";
+                document.getElementById('protectedAreaStatus').innerText = `🟠 Schutzgebiet gefunden: ${sgData.name}`;
+                document.getElementById('protectedAreaStatus').className = "status-badge status-warning";
                 document.getElementById('isProtectedArea').value = "true";
-            } else {
-                statusBox.innerText = "✅ Kein Schutzgebiet im 5km Umkreis gefunden (Standard Text).";
-                statusBox.className = "status-badge status-safe";
-                document.getElementById('isProtectedArea').value = "false";
             }
         }
 
         document.getElementById('photoUpload').addEventListener('change', function(event) {
-            photoDataArray = [];
-            const files = event.target.files;
-            document.getElementById('photoStatus').innerText = `Verarbeite ${files.length} Bild(er)...`;
-            
-            Array.from(files).forEach(file => {
+            Array.from(event.target.files).forEach(file => {
                 const reader = new FileReader();
-                reader.onload = function(e) {
+                reader.onload = e => {
                     const img = new Image();
-                    img.onload = function() {
+                    img.onload = () => {
                         const canvas = document.createElement('canvas');
-                        const ctx = canvas.getContext('2d');
                         const scale = Math.min(600 / img.width, 1);
-                        canvas.width = img.width * scale;
-                        canvas.height = img.height * scale;
-                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                        
-                        const base64String = canvas.toDataURL('image/jpeg', 0.7).split(',')[1];
-                        photoDataArray.push({ data: base64String, width: canvas.width, height: canvas.height });
-                        document.getElementById('photoStatus').innerText = `${photoDataArray.length} Bild(er) erfolgreich komprimiert.`;
+                        canvas.width = img.width * scale; canvas.height = img.height * scale;
+                        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+                        photoDataArray.push({ data: canvas.toDataURL('image/jpeg', 0.7).split(',')[1], width: canvas.width, height: canvas.height });
                     };
                     img.src = e.target.result;
                 };
@@ -197,97 +137,28 @@
         });
 
         async function generateDocument() {
-            try {
-                const plzOrt = document.getElementById('plzOrt').value || "UNBEKANNTER ORT";
-                const flurnummer = document.getElementById('flurnummer').value || "UNBEKANNTE FLURNUMMER";
-                const sgName = document.getElementById('sgName').value;
-                const sgId = document.getElementById('sgId').value;
-                const coordString = coordinatesList.length > 0 ? coordinatesList.join('; ') : "KEINE KOORDINATEN";
-                const isSpaOrNear = document.getElementById('isProtectedArea').value === "true" || sgName !== "";
+            const { Document, Packer, Paragraph, ImageRun, AlignmentType, HeadingLevel } = docx;
+            const sgName = document.getElementById('sgName').value;
+            const docChildren = [
+                new Paragraph({ text: "Wildes Bayern e.V.", bold: true }),
+                new Paragraph({ text: "\nAnzeige wegen Zaunmaterial in " + document.getElementById('plzOrt').value, bold: true }),
+                new Paragraph({ text: `\nFundort: ${document.getElementById('coordInput').value}, Flurnummer: ${document.getElementById('flurnummer').value}` }),
+                ...(sgName ? [new Paragraph({ text: `\nDas Gebiet liegt in der Nähe von: ${sgName}`, bold: true })] : []),
+                new Paragraph({ text: "\nSachverhalt: Das Material ist als Abfall zu entsorgen.", bold: true }),
+                ...(photoDataArray.length > 0 ? [new Paragraph({ text: "\nAnlage: Fotos", heading: HeadingLevel.HEADING_2 })] : [])
+            ];
+            
+            photoDataArray.forEach(img => {
+                docChildren.push(new Paragraph({
+                    children: [new ImageRun({ data: Uint8Array.from(atob(img.data), c => c.charCodeAt(0)), transformation: { width: img.width, height: img.height } })],
+                    alignment: AlignmentType.CENTER
+                }));
+            });
 
-                const { Document, Packer, Paragraph, TextRun, ImageRun, AlignmentType, HeadingLevel } = docx;
-
-                let docChildren = [
-                    new Paragraph({ text: "Wildes Bayern e.V.", bold: true }),
-                    new Paragraph({ text: "Hirschbergstraße 1\n83714 Miesbach" }),
-                    new Paragraph({ text: "\nMünchen, den " + new Date().toLocaleDateString('de-DE'), alignment: AlignmentType.RIGHT }),
-                    
-                    new Paragraph({ text: "\nUntere Naturschutzbehörde", bold: true }),
-                    new Paragraph({ text: "Landratsamt" }),
-                    
-                    new Paragraph({ 
-                        text: "\nAnzeige wegen des Verdachts von Vergehen gegen Waldgesetz, Kreislaufwirtschaftsgesetz, Naturschutzgesetz und Tierschutzgesetz durch nicht ordnungsgemäß entsorgtes Zaunmaterial", 
-                        bold: true, 
-                        heading: HeadingLevel.HEADING_3 
-                    }),
-
-                    new Paragraph({ text: "\nSehr geehrte Damen und Herren,\n" }),
-                    
-                    new Paragraph({ text: `Nach einem Hinweis aus der Bevölkerung möchte ich mich gerne an Sie wenden, um zu melden, dass in ${plzOrt}, Flurnummer(n) ${flurnummer} (Koordinaten: ${coordString}) altes Zaunmaterial am Boden liegt.` }),
-                    
-                    new Paragraph({ text: "\nAls Mitarbeiterin des anerkannten Naturschutzvereins Wildes Bayern e.V. bin ich besorgt, dass durch dieses unsachgemäß im Wald liegende Zaunmaterial eine erhebliche Gefährdung für bodenbrütende Vogelarten, sowie Arten, die am Boden nach Nahrung suchen, wie zum Beispiel Spechte, besteht und eine konkrete Verletzungsgefahr für Wildtiere, vor allem Jungtiere, ausgeht. Ich bitte die Behörde, den Sachverhalt und die vorgebrachten Bedenken zu prüfen und gegebenenfalls einzuschreiten." }),
-
-                    new Paragraph({ text: "\nSachverhalt", bold: true }),
-                    new Paragraph({ text: "Das Zaunmaterial dient keinem Zweck mehr und ist deshalb als Abfall zu betrachten und zu entsorgen." })
-                ];
-
-                if (sgName) {
-                    let sgText = `Das Gebiet liegt in unmittelbarer Nähe oder direkt im geschützten Gebiet „${sgName}“`;
-                    if (sgId) sgText += ` (Gebietsnr. ${sgId})`;
-                    sgText += ".";
-                    docChildren.push(new Paragraph({ text: "\n" + sgText }));
-                }
-
-                docChildren.push(
-                    new Paragraph({ text: "\nVermuteter Verstoß gegen das Waldgesetz und Kreislaufwirtschaftsgesetz", bold: true }),
-                    new Paragraph({ text: "Zäunungen dienen zum Schutz von Pflanzen, bis zu dem Zeitpunkt, ab dem diese dem Äser von Schalenwild (Reh, Rotwild, Gams) entwachsen sind. Sobald der Zaun nicht mehr seinem Schutzzweck entspricht, die Jungbäume den Schutz durch den Zaun nicht mehr brauchen, muss der Zaun, entspr. § 3 des Kreislaufwirtschaftsgesetzes abgebaut und entsorgt werden. Wenn der Zaun nur mehr abschnittsweise aufrecht steht, ist davon auszugehen, dass der Schutzzweck des Zauns nicht mehr gegeben ist und er abgebaut werden muss." }),
-                    new Paragraph({ text: "\nIn Verlautbarungen des Bayerischen Staatsministeriums für Ernährung, Landwirtschaft und Forsten wird ausdrücklich der private Waldbesitzer darauf hingewiesen: „Ein Wildschutzzaun verliert seine Berechtigung auch dann, wenn er beschädigt oder verfallen ist... Solche Zäune werden nach dem Gesetz ab diesem Moment automatisch zu Abfall... Zäune lediglich zu Boden zu drücken und im Wald zu belassen ist verboten.“" }),
-
-                    new Paragraph({ text: "\nNaturschutzrechtliche Bedenken", bold: true }),
-                    new Paragraph({ text: "Wir sind sehr in Sorge, dass durch das Zaunmaterial bedrohte und geschützte Tierarten in den betroffenen Gebieten gestört, verletzt und getötet werden. Die in dem Gebiet vorkommenden bodenbrütenden Vogelarten führen ab Frühjahr und Frühsommer die noch flugunfähigen Jungvögel auf Futtersuche durch das Gelände." })
-                );
-
-                if (isSpaOrNear) {
-                    docChildren.push(new Paragraph({ text: "\nDie Schädigung von derart besonders geschützten Arten in oder an Schutzgebieten, wozu auch die Verschlechterung der Verhältnisse in deren Lebensraum zählen kann, wird in § 329 StGB strafbewehrt.", bold: true }));
-                }
-
-                docChildren.push(new Paragraph({ text: "\nTierschutzrechtliche Bedenken", bold: true }));
-                docChildren.push(new Paragraph({ text: "Ebenso höchst besorgt sind wir, dass durch das Vorgehen billigend oder vorsätzlich in Kauf genommen wird, dass wildlebenden Tieren anhaltende und vermeidbare Schmerzen in tierquälerischer Weise und ohne vernünftigen Grund zugefügt werden. Aus diesem Grund liegt meines Erachtens ein Verstoß gegen die Vorschriften des § 17 des TierschG vor. Das unbeabsichtigte Töten von Tieren ohne vernünftigen Grund, sowie die Verursachung von unnötigem Tierleid, wird durch das nicht entfernte Zaunmaterial billigend oder gar vorsätzlich in Kauf genommen." }));
-                
-                docChildren.push(new Paragraph({ text: "\nIch bitte daher die Untere Naturschutzbehörde zu ermitteln, ob in dem geschilderten Sachverhalt strafrechtliche Tatbestände und Ordnungswidrigkeiten berührt werden und ersuche gegebenenfalls entsprechend tätig zu werden." }));
-                docChildren.push(new Paragraph({ text: "\nMit freundlichen Grüßen,\n\nEsther Zimmermann\nWildes Bayern e.V." }));
-
-                if (photoDataArray.length > 0) {
-                    docChildren.push(new Paragraph({ text: "\nAnlage: Fotodokumentation", heading: HeadingLevel.HEADING_2, pageBreakBefore: true }));
-                    photoDataArray.forEach(img => {
-                        docChildren.push(new Paragraph({
-                            children: [
-                                new ImageRun({
-                                    data: Uint8Array.from(atob(img.data), c => c.charCodeAt(0)),
-                                    transformation: { width: img.width, height: img.height }
-                                })
-                            ],
-                            alignment: AlignmentType.CENTER
-                        }));
-                        docChildren.push(new Paragraph({ text: "\n" }));
-                    });
-                }
-
-                const doc = new Document({ sections: [{ properties: {}, children: docChildren }] });
-                const blob = await Packer.toBlob(doc);
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `Anzeige_Zaun_${plzOrt.replace(/[^a-zA-Z0-9]/g, '_')}.docx`;
-                document.body.appendChild(a);
-                a.click();
-                window.URL.revokeObjectURL(url);
-                a.remove();
-
-            } catch (error) {
-                console.error("Dokument-Erstellung fehlgeschlagen:", error);
-                alert("Fehler bei der Dokumenterstellung. Bitte prüfen Sie die Browser-Konsole für Details.");
-            }
+            const doc = new Document({ sections: [{ children: docChildren }] });
+            Packer.toBlob(doc).then(blob => {
+                const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = "Anzeige.docx"; a.click();
+            });
         }
     </script>
 </body>
