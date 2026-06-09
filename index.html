@@ -16,10 +16,13 @@
         label { display: block; font-weight: bold; margin-top: 15px; color: #333; }
         input[type="text"], textarea { width: 100%; padding: 10px; margin-top: 5px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
         button { background-color: #005f26; color: white; padding: 12px 20px; border: none; border-radius: 4px; cursor: pointer; margin-top: 15px; font-weight: bold; width: 100%; }
-        #map { width: 100%; height: 350px; margin-top: 15px; }
-        .coord-list { background: #e8f5e9; padding: 15px; margin-top: 15px; border-left: 4px solid #28a745; }
+        button:hover { background-color: #00421a; }
+        #map { width: 100%; height: 350px; margin-top: 15px; border-radius: 4px; border: 1px solid #ccc; }
+        .coord-list { background: #e8f5e9; padding: 15px; margin-top: 15px; border-radius: 4px; border-left: 4px solid #28a745; }
+        .coord-item { margin-bottom: 5px; font-family: monospace; font-size: 1.1em; color: #155724; }
         .flex-row { display: flex; gap: 15px; }
         .flex-row > div { flex: 1; }
+        .hint-text { font-size: 0.85em; color: #666; margin-top: 3px; }
     </style>
 </head>
 <body>
@@ -28,7 +31,7 @@
 
     <div class="section">
         <h3>1. Fundorte erfassen</h3>
-        <input type="text" id="coordInput" placeholder="Breitengrad, Längengrad (z.B. 48.54, 11.73)">
+        <input type="text" id="coordInput" placeholder="Breitengrad, Längengrad (z.B. 48.540385, 11.730074)">
         <button onclick="processCoordinates()">Koordinate hinzufügen & BayernAtlas abfragen</button>
         <div id="coordDisplay" class="coord-list">Noch keine Koordinaten erfasst.</div>
         <div id="map"></div>
@@ -37,23 +40,24 @@
     <div class="section">
         <h3>2. Details</h3>
         <label>PLZ & Ort:</label>
-        <input type="text" id="plzOrt">
+        <input type="text" id="plzOrt" placeholder="z.B. 93333 Neustadt an der Donau">
         <label>Flurnummer(n):</label>
-        <input type="text" id="flurnummer">
+        <input type="text" id="flurnummer" placeholder="Bitte manuell eintragen">
         
         <div class="flex-row">
             <div>
                 <label>Name des Schutzgebietes:</label>
-                <input type="text" id="sgName">
+                <input type="text" id="sgName" placeholder="z.B. NATO-Übungsplatz Siegenburg">
             </div>
             <div>
                 <label>ID-Code Bayern:</label>
-                <input type="text" id="sgId">
+                <input type="text" id="sgId" placeholder="z.B. 7236-304">
             </div>
         </div>
 
         <label>Fotos:</label>
         <input type="file" id="photoUpload" accept="image/png, image/jpeg" multiple>
+        <div id="photoStatus" style="margin-top: 5px; font-size: 0.9em; color: #666;"></div>
     </div>
 
     <div class="section">
@@ -114,6 +118,7 @@
                         canvas.width = img.width * scale; canvas.height = img.height * scale;
                         canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
                         photoDataArray.push({ data: canvas.toDataURL('image/jpeg', 0.7).split(',')[1], width: canvas.width, height: canvas.height });
+                        document.getElementById('photoStatus').innerText = "Fotos geladen.";
                     };
                     img.src = e.target.result;
                 };
@@ -125,17 +130,31 @@
             if (!window.docx) { alert("Bibliothek wird noch geladen..."); return; }
             const { Document, Packer, Paragraph, ImageRun, AlignmentType, HeadingLevel } = window.docx;
             
+            const plzOrt = document.getElementById('plzOrt').value;
+            const flurnummer = document.getElementById('flurnummer').value;
             const sgName = document.getElementById('sgName').value;
             const sgId = document.getElementById('sgId').value;
             
             const docChildren = [
                 new Paragraph({ text: "Wildes Bayern e.V.", bold: true }),
-                new Paragraph({ text: "\nAnzeige wegen Zaunmaterial in " + document.getElementById('plzOrt').value, heading: HeadingLevel.HEADING_2 }),
+                new Paragraph({ text: "Hirschbergstraße 1, 83714 Miesbach" }),
+                new Paragraph({ text: "\nAnzeige wegen des Verdachts von Vergehen gegen Waldgesetz, Kreislaufwirtschaftsgesetz, Naturschutzgesetz und Tierschutzgesetz", heading: HeadingLevel.HEADING_3 }),
+                new Paragraph({ text: `\nFundort: ${plzOrt}, Flurnummer(n): ${flurnummer}` }),
                 new Paragraph({ text: `Koordinaten: ${coordinatesList.join('; ')}` }),
-                new Paragraph({ text: `Flurnummer: ${document.getElementById('flurnummer').value}` }),
-                ...(sgName ? [new Paragraph({ text: `\nDas Gebiet liegt in der Nähe von: ${sgName} (Gebietsnr: ${sgId})`, bold: true })] : []),
-                new Paragraph({ text: "\nSachverhalt: Das Zaunmaterial ist als Abfall zu betrachten.", bold: true }),
-                ...(photoDataArray.length > 0 ? [new Paragraph({ text: "\nAnlage: Fotos", heading: HeadingLevel.HEADING_2 })] : [])
+                
+                ...(sgName ? [new Paragraph({ text: `\nDas Gebiet liegt in der Nähe von: ${sgName} (Gebietsnr: ${sgId})`, bold: true }),
+                    new Paragraph({ text: "Die Schädigung von derart besonders geschützten Arten in oder an Schutzgebieten wird in § 329 StGB strafbewehrt.", bold: true })] : []),
+                
+                new Paragraph({ text: "\nSachverhalt", heading: HeadingLevel.HEADING_2, bold: true }),
+                new Paragraph({ text: "Das Zaunmaterial dient keinem Zweck mehr und ist als Abfall zu betrachten. Zäunungen müssen abgebaut werden, sobald der Schutzzweck entfällt. In Verlautbarungen des Bayerischen Staatsministeriums wird ausdrücklich darauf hingewiesen: „Ein Wildschutzzaun verliert seine Berechtigung auch dann, wenn er beschädigt oder verfallen ist... Zäune lediglich zu Boden zu drücken und im Wald zu belassen ist verboten.“" }),
+                
+                new Paragraph({ text: "\nTierschutzrechtliche Bedenken", heading: HeadingLevel.HEADING_2, bold: true }),
+                new Paragraph({ text: "Ebenso höchst besorgt sind wir, dass durch das Vorgehen billigend oder vorsätzlich in Kauf genommen wird, dass wildlebenden Tieren anhaltende und vermeidbare Schmerzen zugefügt werden. Es liegt meines Erachtens ein Verstoß gegen die Vorschriften des § 17 des TierschG vor." }),
+                
+                new Paragraph({ text: "\nIch bitte die Behörde den Sachverhalt zu prüfen und ggf. einzuschreiten.", bold: true }),
+                new Paragraph({ text: "\nMit freundlichen Grüßen,\nWildes Bayern e.V." }),
+                
+                ...(photoDataArray.length > 0 ? [new Paragraph({ text: "\nAnlage: Fotodokumentation", heading: HeadingLevel.HEADING_2, pageBreakBefore: true })] : [])
             ];
             
             photoDataArray.forEach(img => {
@@ -146,8 +165,9 @@
             });
 
             const doc = new Document({ sections: [{ children: docChildren }] });
-            const blob = await Packer.toBlob(doc);
-            const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = "Anzeige.docx"; a.click();
+            Packer.toBlob(doc).then(blob => {
+                const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = "Anzeige.docx"; a.click();
+            });
         }
     </script>
 </body>
