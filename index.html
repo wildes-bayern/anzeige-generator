@@ -3,9 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Wildes Bayern - Anzeige Generator</title>
-    <!-- Word Document Generation Library -->
     <script src="https://unpkg.com/docx@8.5.0/build/index.js"></script>
-    <!-- Leaflet Mapping Library -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
@@ -13,16 +11,19 @@
         .section { background: white; margin-bottom: 20px; padding: 25px; border: 1px solid #ddd; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
         h1 { color: #2c3e50; border-bottom: 2px solid #005f26; padding-bottom: 10px; }
         label { display: block; font-weight: bold; margin-top: 15px; color: #333; }
-        input[type="text"], input[type="password"], textarea { width: 100%; padding: 10px; margin-top: 5px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+        input[type="text"], textarea { width: 100%; padding: 10px; margin-top: 5px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
         input[readonly] { background-color: #e9ecef; color: #495057; border: 1px solid #ced4da; }
         button { background-color: #005f26; color: white; padding: 12px 20px; border: none; border-radius: 4px; cursor: pointer; margin-top: 15px; font-weight: bold; width: 100%; }
         button:hover { background-color: #00421a; }
         #map { width: 100%; height: 350px; margin-top: 15px; border-radius: 4px; border: 1px solid #ccc; z-index: 1; }
         .coord-list { background: #e8f5e9; padding: 15px; margin-top: 15px; border-radius: 4px; border-left: 4px solid #28a745; }
         .coord-item { margin-bottom: 5px; font-family: monospace; font-size: 1.1em; color: #155724; }
-        .status-badge { display: inline-block; padding: 5px 10px; border-radius: 4px; font-size: 0.9em; font-weight: bold; margin-top: 5px; }
-        .status-safe { background-color: #d4edda; color: #155724; }
-        .status-warning { background-color: #f8d7da; color: #721c24; }
+        .status-badge { display: inline-block; padding: 8px 12px; border-radius: 4px; font-size: 0.9em; font-weight: bold; margin-top: 5px; width: 100%; box-sizing: border-box; }
+        .status-safe { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .status-warning { background-color: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
+        .status-danger { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .status-loading { background-color: #e2e3e5; color: #383d41; border: 1px solid #d6d8db; }
+        .hint-text { font-size: 0.85em; color: #666; margin-top: 3px; }
     </style>
 </head>
 <body>
@@ -30,33 +31,26 @@
     <h1>Wildes Bayern e.V. - Anzeige Generator</h1>
 
     <div class="section">
-        <h3>1. LDBV GeodatenOnline Login</h3>
-        <label>Benutzername:</label>
-        <input type="text" id="username" placeholder="GDO Benutzer">
-        <label>Passwort:</label>
-        <input type="password" id="password" placeholder="••••••••">
-    </div>
-
-    <div class="section">
-        <h3>2. Fundorte erfassen</h3>
+        <h3>1. Fundorte erfassen</h3>
         <label>Koordinaten (z.B. 48.540385, 11.730074):</label>
         <input type="text" id="coordInput" placeholder="Breitengrad, Längengrad">
-        <button onclick="processCoordinates()">Koordinate hinzufügen & Prüfen</button>
+        <button onclick="processCoordinates()">Koordinate hinzufügen & Umgebung prüfen</button>
         
         <div id="coordDisplay" class="coord-list">Noch keine Koordinaten erfasst.</div>
         <div id="map"></div>
     </div>
 
     <div class="section">
-        <h3>3. Situationsdetails & Schutzstatus</h3>
+        <h3>2. Situationsdetails & Schutzstatus</h3>
         <label>PLZ & Ort (wird für Behördenzuweisung genutzt):</label>
-        <input type="text" id="plzOrt" placeholder="z.B. 93333 Neustadt an der Donau">
+        <input type="text" id="plzOrt" placeholder="Wird automatisch ermittelt...">
 
         <label>Flurnummer(n) (Durch Komma getrennt):</label>
-        <input type="text" id="flurnummer" placeholder="z.B. 301, 306">
+        <input type="text" id="flurnummer" placeholder="Wird über LDBV API ermittelt...">
+        <div class="hint-text">Datenabfrage via GeodatenOnline (BayernAtlas Plus)</div>
 
-        <label>Automatischer Schutzgebiet-Status:</label>
-        <input type="text" id="protectedAreaStatus" readonly placeholder="Wird nach Koordinateneingabe automatisch geprüft...">
+        <label>Automatischer Schutzgebiet-Status (5km Radius Check):</label>
+        <div id="protectedAreaStatus" class="status-badge status-safe">Wird nach Koordinateneingabe automatisch geprüft...</div>
         <input type="hidden" id="isProtectedArea" value="false">
 
         <label>Fotobeweise anhängen (Optional):</label>
@@ -65,13 +59,13 @@
     </div>
 
     <div class="section">
-        <h3>4. Anzeige generieren</h3>
+        <h3>3. Anzeige generieren</h3>
         <button onclick="generateDocument()" style="background-color: #28a745; font-size: 1.2em; padding: 15px;">Anzeige als .docx herunterladen</button>
     </div>
 
     <script>
         // --- 1. MAP INITIALIZATION ---
-        let map = L.map('map').setView([48.7904, 11.4979], 7); // Bavaria Focus
+        let map = L.map('map').setView([48.7904, 11.4979], 7);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '© OpenStreetMap'
         }).addTo(map);
@@ -92,13 +86,14 @@
             
             // Update Map
             L.marker([lat, lng]).addTo(map);
-            map.setView([lat, lng], 15);
+            L.circle([lat, lng], { radius: 5000, color: 'orange', fillOpacity: 0.1, weight: 1 }).addTo(map);
+            map.setView([lat, lng], 12);
             
             // Update UI List
             document.getElementById('coordDisplay').innerHTML = coordinatesList.map(c => `<div class="coord-item">📍 ${c}</div>`).join('');
             document.getElementById('coordInput').value = '';
 
-            // API 1: Fetch PLZ & Ort (Nominatim OpenStreetMap)
+            // API 1: Fetch PLZ & Ort
             try {
                 const geoRes = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
                 const geoData = await geoRes.json();
@@ -109,47 +104,64 @@
                 }
             } catch(e) { console.error("Geocoding failed", e); }
 
-            // API 2: Automated Protected Area Check (Overpass API)
-            document.getElementById('protectedAreaStatus').value = "Prüfe Schutzgebiete...";
-            const overpassQuery = `[out:json];is_in(${lat},${lng});rel(pivot)[boundary=protected_area];out tags;`;
+            // API 2: Secure Flurnummer Check via Cloudflare Proxy
+            document.getElementById('flurnummer').value = "Lade Flurnummer...";
             try {
-                const overpassRes = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(overpassQuery)}`);
-                const overpassData = await overpassRes.json();
+                const proxyUrl = `https://wildes-bayern-proxy.wildesbayern1.workers.dev/?lat=${lat}&lng=${lng}`;
+                const proxyRes = await fetch(proxyUrl);
+                const xmlStr = await proxyRes.text();
                 
-                if (overpassData.elements && overpassData.elements.length > 0) {
-                    const areaName = overpassData.elements[0].tags.name || "Schutzgebiet";
-                    document.getElementById('protectedAreaStatus').value = `⚠️ Liegt im geschützten Bereich: ${areaName} (Erweiterter Text wird genutzt)`;
-                    document.getElementById('protectedAreaStatus').className = "status-badge status-warning";
-                    document.getElementById('isProtectedArea').value = "true";
+                // Simple regex to extract the first Flurnummer value from the XML
+                const match = xmlStr.match(/<[^>]*flurnummer[^>]*>([^<]+)<\//i);
+                if(match && match[1]) {
+                    document.getElementById('flurnummer').value = match[1];
                 } else {
-                    document.getElementById('protectedAreaStatus').value = "✅ Kein primäres Schutzgebiet (Standard Text wird genutzt)";
-                    document.getElementById('protectedAreaStatus').className = "status-badge status-safe";
+                    document.getElementById('flurnummer').value = "Keine Flurnummer gefunden. Bitte manuell prüfen.";
                 }
             } catch (e) {
-                document.getElementById('protectedAreaStatus').value = "Fehler bei der autom. Prüfung.";
-                console.error("Overpass failed", e);
+                console.error("Proxy failed", e);
+                document.getElementById('flurnummer').value = "Verbindungsfehler zum Proxy. Bitte manuell eintragen.";
             }
 
-            // API 3: BayernAtlas Plus WFS (Flurnummer)
-            const user = document.getElementById('username').value;
-            const pass = document.getElementById('password').value;
-            if(user && pass) {
-                // This builds the standard WFS request. If CORS blocks it, user types manually.
-                const authHeader = 'Basic ' + btoa(user + ':' + pass);
-                const wfsUrl = `https://geoservices.bayern.de/wfs/v1/ogc_alkis?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&TYPENAMES=ave:Flurstueck&BBOX=${lng-0.0001},${lat-0.0001},${lng+0.0001},${lat+0.0001},EPSG:4326`;
+            // API 3: Automated 5km Protected Area Check (Overpass API)
+            const statusBox = document.getElementById('protectedAreaStatus');
+            statusBox.innerText = "⏳ Prüfe Schutzgebiete (Bitte warten)...";
+            statusBox.className = "status-badge status-loading";
+            
+            try {
+                const queryInside = `[out:json][timeout:10];is_in(${lat},${lng});rel(pivot)["boundary"="protected_area"];out tags limit 1;`;
+                const resInside = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(queryInside)}`);
+                const dataInside = await resInside.json();
                 
-                fetch(wfsUrl, { headers: { 'Authorization': authHeader } })
-                    .then(r => r.text())
-                    .then(xmlStr => {
-                        // Very basic XML extraction for Flurnummer if request succeeds
-                        if(xmlStr.includes('flurnummer')) {
-                            document.getElementById('flurnummer').value = "Erfolgreich via API abgerufen";
-                        }
-                    }).catch(e => console.log("LDBV CORS/Auth Blocked. Manual entry required."));
+                if (dataInside.elements && dataInside.elements.length > 0) {
+                    const areaName = dataInside.elements[0].tags.name || "Schutzgebiet";
+                    statusBox.innerText = `🔴 Liegt DIREKT IM Schutzgebiet: ${areaName} (Erweiterter Text wird genutzt)`;
+                    statusBox.className = "status-badge status-danger";
+                    document.getElementById('isProtectedArea').value = "inside";
+                    return; 
+                } 
+
+                const queryNear = `[out:json][timeout:15];(way["boundary"="protected_area"](around:5000,${lat},${lng});relation["boundary"="protected_area"](around:5000,${lat},${lng}););out tags limit 1;`;
+                const resNear = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(queryNear)}`);
+                const dataNear = await resNear.json();
+
+                if (dataNear.elements && dataNear.elements.length > 0) {
+                    const areaName = dataNear.elements[0].tags.name || "Schutzgebiet";
+                    statusBox.innerText = `🟠 Liegt im 5KM UMKREIS von: ${areaName} (Erweiterter Text wird genutzt)`;
+                    statusBox.className = "status-badge status-warning";
+                    document.getElementById('isProtectedArea').value = "near";
+                } else {
+                    statusBox.innerText = "✅ Kein Schutzgebiet im 5km Umkreis gefunden (Standard Text).";
+                    statusBox.className = "status-badge status-safe";
+                    document.getElementById('isProtectedArea').value = "false";
+                }
+            } catch (e) {
+                statusBox.innerText = "⚠️ Fehler bei der autom. Prüfung. Standardtext wird verwendet.";
+                statusBox.className = "status-badge status-loading";
             }
         }
 
-        // --- 3. IMAGE COMPRESSION (Prevents crash on download) ---
+        // --- 3. IMAGE COMPRESSION ---
         document.getElementById('photoUpload').addEventListener('change', function(event) {
             photoDataArray = [];
             const files = event.target.files;
@@ -162,19 +174,13 @@
                     img.onload = function() {
                         const canvas = document.createElement('canvas');
                         const ctx = canvas.getContext('2d');
-                        // Scale down to max 600px width for Word Doc safety
                         const scale = Math.min(600 / img.width, 1);
                         canvas.width = img.width * scale;
                         canvas.height = img.height * scale;
                         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
                         
-                        // Store as base64 array
                         const base64String = canvas.toDataURL('image/jpeg', 0.7).split(',')[1];
-                        photoDataArray.push({
-                            data: base64String,
-                            width: canvas.width,
-                            height: canvas.height
-                        });
+                        photoDataArray.push({ data: base64String, width: canvas.width, height: canvas.height });
                         document.getElementById('photoStatus').innerText = `${photoDataArray.length} Bild(er) erfolgreich komprimiert und bereit.`;
                     };
                     img.src = e.target.result;
@@ -189,11 +195,11 @@
                 const plzOrt = document.getElementById('plzOrt').value || "UNBEKANNTER ORT";
                 const flurnummer = document.getElementById('flurnummer').value || "UNBEKANNTE FLURNUMMER";
                 const coordString = coordinatesList.length > 0 ? coordinatesList.join('; ') : "KEINE KOORDINATEN";
-                const isSpa = document.getElementById('isProtectedArea').value === "true";
+                const protStatus = document.getElementById('isProtectedArea').value;
+                const isSpaOrNear = (protStatus === "inside" || protStatus === "near");
 
                 const { Document, Packer, Paragraph, TextRun, ImageRun, AlignmentType, HeadingLevel } = docx;
 
-                // Build Paragraphs Array
                 let docChildren = [
                     new Paragraph({ text: "Wildes Bayern e.V.", bold: true }),
                     new Paragraph({ text: "Hirschbergstraße 1\n83714 Miesbach" }),
@@ -218,26 +224,23 @@
                     new Paragraph({ text: "Das Zaunmaterial dient keinem Zweck mehr und ist deshalb als Abfall zu betrachten und zu entsorgen." }),
 
                     new Paragraph({ text: "\nVermuteter Verstoß gegen das Waldgesetz und Kreislaufwirtschaftsgesetz", bold: true }),
-                    new Paragraph({ text: "Zäunungen dienen zum Schutz von Pflanzen, bis zu dem Zeitpunkt, ab dem diese dem Äser von Schalenwild (Reh, Rotwild, Gams) entwachsen sind. Sobald der Zaun nicht mehr seinem Schutzzweck entspricht, die Jungbäume den Schutz durch den Zaun nicht mehr brauchen, muss der Zaun, entspr. § 3 des Kreislaufwirtschaftsgesetzes abgebaut und entsorgt werden. Wenn der Zaun nur mehr abschnittsweise aufrecht steht, ist davon auszugehen, dass der Schutzzweck des Zauns nicht mehr gegeben ist und er abgebaut werden muss." }),
+                    new Paragraph({ text: "Zäunungen dienen zum Schutz von Pflanzen, bis zu dem Zeitpunkt, ab dem diese dem Äser von Schalenwild (Reh, Rotwild, Gams) entwachsen sind. Sobald der Zaun nicht mehr seinem Schutzzweck entspricht, die Jungbäume den Schutz durch den Zaun nicht mehr brauchen, muss der Zaun, entspr. § 3 des Kreislaufwirtschaftsgesetzes abgebaut und entsorgt werden." }),
                     new Paragraph({ text: "\nIn Verlautbarungen des Bayerischen Staatsministeriums für Ernährung, Landwirtschaft und Forsten wird ausdrücklich der private Waldbesitzer darauf hingewiesen: „Ein Wildschutzzaun verliert seine Berechtigung auch dann, wenn er beschädigt oder verfallen ist... Solche Zäune werden nach dem Gesetz ab diesem Moment automatisch zu Abfall... Zäune lediglich zu Boden zu drücken und im Wald zu belassen ist verboten.“" }),
 
                     new Paragraph({ text: "\nNaturschutzrechtliche Bedenken", bold: true }),
                     new Paragraph({ text: "Wir sind sehr in Sorge, dass durch das Zaunmaterial bedrohte und geschützte Tierarten in den betroffenen Gebieten gestört, verletzt und getötet werden. Die in dem Gebiet vorkommenden bodenbrütenden Vogelarten führen ab Frühjahr und Frühsommer die noch flugunfähigen Jungvögel auf Futtersuche durch das Gelände." })
                 ];
 
-                // SPA/Protected Area specific text insertion
-                if (isSpa) {
-                    docChildren.push(new Paragraph({ text: "\nDas Gebiet liegt zudem in unmittelbarer Nähe zu einem FFH / SPA (Vogelschutz) Gebiet, das explizit zum Schutz dieser Vogelarten ausgewiesen wurde. Vogelarten aus diesem Gebiet können sich jederzeit auch auf den Flächen mit dem Zaunmaterial aufhalten. Die Schädigung von derart besonders geschützten Arten, wozu auch die Verschlechterung der Verhältnisse in deren Lebensraum zählen kann, wird in § 329 StGB strafbewehrt.", bold: true }));
+                if (isSpaOrNear) {
+                    docChildren.push(new Paragraph({ text: "\nDas Gebiet liegt zudem in unmittelbarer Nähe zu oder direkt in einem FFH / SPA (Vogelschutz) Gebiet, das explizit zum Schutz dieser Vogelarten ausgewiesen wurde. Vogelarten aus diesem Gebiet können sich jederzeit auch auf den Flächen mit dem Zaunmaterial aufhalten. Die Schädigung von derart besonders geschützten Arten, wozu auch die Verschlechterung der Verhältnisse in deren Lebensraum zählen kann, wird in § 329 StGB strafbewehrt.", bold: true }));
                 }
 
                 docChildren.push(new Paragraph({ text: "\nTierschutzrechtliche Bedenken", bold: true }));
-                docChildren.push(new Paragraph({ text: "Ebenso höchst besorgt sind wir, dass durch das Vorgehen billigend oder vorsätzlich in Kauf genommen wird, dass wildlebenden Tieren anhaltende und vermeidbare Schmerzen in tierquälerischer Weise und ohne vernünftigen Grund zugefügt werden." }));
-                docChildren.push(new Paragraph({ text: "Aus diesem Grund liegt meines Erachtens ein Verstoß gegen die Vorschriften des § 17 des TierschG vor. Das unbeabsichtigte Töten von Tieren ohne vernünftigen Grund, sowie die Verursachung von unnötigem Tierleid, wird durch das nicht entfernte Zaunmaterial billigend oder gar vorsätzlich in Kauf genommen." }));
+                docChildren.push(new Paragraph({ text: "Ebenso höchst besorgt sind wir, dass durch das Vorgehen billigend oder vorsätzlich in Kauf genommen wird, dass wildlebenden Tieren anhaltende und vermeidbare Schmerzen in tierquälerischer Weise und ohne vernünftigen Grund zugefügt werden. Aus diesem Grund liegt meines Erachtens ein Verstoß gegen die Vorschriften des § 17 des TierschG vor. Das unbeabsichtigte Töten von Tieren ohne vernünftigen Grund, sowie die Verursachung von unnötigem Tierleid, wird durch das nicht entfernte Zaunmaterial billigend oder gar vorsätzlich in Kauf genommen." }));
                 
                 docChildren.push(new Paragraph({ text: "\nIch bitte daher die Untere Naturschutzbehörde zu ermitteln, ob in dem geschilderten Sachverhalt strafrechtliche Tatbestände und Ordnungswidrigkeiten berührt werden und ersuche gegebenenfalls entsprechend tätig zu werden." }));
                 docChildren.push(new Paragraph({ text: "\nMit freundlichen Grüßen,\n\nEsther Zimmermann\nWildes Bayern e.V." }));
 
-                // Process Images
                 if (photoDataArray.length > 0) {
                     docChildren.push(new Paragraph({ text: "\nAnlage: Fotodokumentation", heading: HeadingLevel.HEADING_2, pageBreakBefore: true }));
                     photoDataArray.forEach(img => {
@@ -254,11 +257,7 @@
                     });
                 }
 
-                // Finalize and Download
-                const doc = new Document({
-                    sections: [{ properties: {}, children: docChildren }]
-                });
-
+                const doc = new Document({ sections: [{ properties: {}, children: docChildren }] });
                 const blob = await Packer.toBlob(doc);
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
