@@ -77,7 +77,6 @@
     </div>
 
     <script>
-        // --- 1. MAP INITIALIZATION ---
         let map = L.map('map').setView([48.7904, 11.4979], 7);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '© OpenStreetMap'
@@ -88,25 +87,21 @@
 
         // --- 2. OFFICIAL BAYERN ATLAS (LFU) WFS API QUERY ---
         async function fetchLfuSchutzgebiet(lat, lng) {
-            // Oficial layers hosted by the Landesamt für Umwelt
-            const layers = ['ffh_gebiet', 'vogelschutzgebiet', 'naturschutzgebiet', 'landschaftsschutzgebiet'];
+            // FIXED: Using the exact namespaces and plural forms required by the Bavarian LfU servers
+            const layers = ['natur:ffh_gebiete', 'natur:vogelschutzgebiete', 'natur:naturschutzgebiete', 'natur:landschaftsschutzgebiete'];
             
-            // 5km radius sweep (approx 0.045 degrees)
-            const d = 0.045;
+            const d = 0.045; // ~5km radius bounding box
             const bbox = `${lng - d},${lat - d},${lng + d},${lat + d}`;
             
             for (const layer of layers) {
-                // Public WFS endpoint without CORS or Auth restrictions
-                const url = `https://www.lfu.bayern.de/gdi/wfs/natur/schutzgebiete?SERVICE=WFS&VERSION=1.1.0&REQUEST=GetFeature&typeName=${layer}&BBOX=${bbox},EPSG:4326`;
+                // FIXED: Downgraded to WFS 1.0.0 to strictly enforce correct Longitude/Latitude bounding box order
+                const url = `https://www.lfu.bayern.de/gdi/wfs/natur/schutzgebiete?SERVICE=WFS&VERSION=1.0.0&REQUEST=GetFeature&typeName=${layer}&BBOX=${bbox}`;
                 
                 try {
                     const response = await fetch(url);
                     const text = await response.text();
                     
-                    // If the XML response contains a feature match
                     if (text.includes('gml:featureMember') || text.includes('wfs:member')) {
-                        
-                        // Robust Regex to extract Name and ID specifically matching LfU XML formats
                         const nameMatch = text.match(/<(?:[^:]+:)?name[^>]*>([^<]+)<\//i) || text.match(/<(?:[^:]+:)?bezeichnung[^>]*>([^<]+)<\//i);
                         const idMatch = text.match(/<(?:[^:]+:)?id_code_bayern[^>]*>([^<]+)<\//i) || text.match(/<(?:[^:]+:)?nummer[^>]*>([^<]+)<\//i) || text.match(/<(?:[^:]+:)?id[^>]*>([^<]+)<\//i);
 
@@ -122,10 +117,9 @@
                     console.log(`Abfrage für ${layer} fehlgeschlagen.`);
                 }
             }
-            return null; // Return null if no protected area found
+            return null; 
         }
 
-        // --- 3. COORDINATE PROCESSING ---
         async function processCoordinates() {
             const input = document.getElementById('coordInput').value;
             if (!input.includes(',')) { 
@@ -136,16 +130,13 @@
             const [lat, lng] = input.split(',').map(c => parseFloat(c.trim()));
             coordinatesList.push(`${lat}, ${lng}`);
             
-            // Update Map
             L.marker([lat, lng]).addTo(map);
             L.circle([lat, lng], { radius: 5000, color: '#005f26', fillOpacity: 0.1, weight: 1 }).addTo(map);
             map.setView([lat, lng], 12);
             
-            // Update UI List
             document.getElementById('coordDisplay').innerHTML = coordinatesList.map(c => `<div class="coord-item">📍 ${c}</div>`).join('');
             document.getElementById('coordInput').value = '';
 
-            // Fetch PLZ & Ort
             try {
                 const geoRes = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
                 const geoData = await geoRes.json();
@@ -156,7 +147,6 @@
                 }
             } catch(e) { console.error("Geocoding failed"); }
 
-            // Fetch Protected Area Check via LfU BayernAtlas Backend
             const statusBox = document.getElementById('protectedAreaStatus');
             statusBox.innerText = "⏳ Lade LfU BayernAtlas Daten (Bitte warten)...";
             statusBox.className = "status-badge status-loading";
@@ -179,7 +169,6 @@
             }
         }
 
-        // --- 4. IMAGE COMPRESSION ---
         document.getElementById('photoUpload').addEventListener('change', function(event) {
             photoDataArray = [];
             const files = event.target.files;
@@ -207,7 +196,6 @@
             });
         });
 
-        // --- 5. WORD DOCUMENT GENERATION ---
         async function generateDocument() {
             try {
                 const plzOrt = document.getElementById('plzOrt').value || "UNBEKANNTER ORT";
