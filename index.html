@@ -3,7 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <title>Wildes Bayern - Anzeige Generator</title>
+    <!-- Word Document Generation Library -->
     <script src="https://unpkg.com/docx@8.5.0/build/index.js"></script>
+    <!-- Leaflet Mapping Library -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
@@ -46,8 +48,8 @@
         <input type="text" id="plzOrt" placeholder="Wird automatisch ermittelt...">
 
         <label>Flurnummer(n) (Durch Komma getrennt):</label>
-        <input type="text" id="flurnummer" placeholder="Wird über LDBV API ermittelt...">
-        <div class="hint-text">Datenabfrage via GeodatenOnline (BayernAtlas Plus)</div>
+        <input type="text" id="flurnummer" placeholder="Bitte manuell eintragen (z.B. 301, 306)">
+        <p class="hint-text"><a href="https://geoportal.bayern.de/bayernatlas/" target="_blank" rel="noopener noreferrer">Hier im BayernAtlas nachsehen</a></p>
 
         <label>Automatischer Schutzgebiet-Status (5km Radius Check):</label>
         <div id="protectedAreaStatus" class="status-badge status-safe">Wird nach Koordinateneingabe automatisch geprüft...</div>
@@ -73,7 +75,7 @@
         let coordinatesList = [];
         let photoDataArray = [];
 
-        // --- 2. COORDINATE PROCESSING & API CALLS ---
+        // --- 2. COORDINATE PROCESSING ---
         async function processCoordinates() {
             const input = document.getElementById('coordInput').value;
             if (!input.includes(',')) { 
@@ -93,7 +95,7 @@
             document.getElementById('coordDisplay').innerHTML = coordinatesList.map(c => `<div class="coord-item">📍 ${c}</div>`).join('');
             document.getElementById('coordInput').value = '';
 
-            // API 1: Fetch PLZ & Ort
+            // Fetch PLZ
             try {
                 const geoRes = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
                 const geoData = await geoRes.json();
@@ -102,28 +104,9 @@
                     const town = geoData.address.city || geoData.address.town || geoData.address.village || "";
                     document.getElementById('plzOrt').value = `${plz} ${town}`.trim();
                 }
-            } catch(e) { console.error("Geocoding failed", e); }
+            } catch(e) { console.error("Geocoding failed"); }
 
-            // API 2: Secure Flurnummer Check via Cloudflare Proxy
-            document.getElementById('flurnummer').value = "Lade Flurnummer...";
-            try {
-                const proxyUrl = `https://wildes-bayern-proxy.wildesbayern1.workers.dev/?lat=${lat}&lng=${lng}`;
-                const proxyRes = await fetch(proxyUrl);
-                const xmlStr = await proxyRes.text();
-                
-                // Simple regex to extract the first Flurnummer value from the XML
-                const match = xmlStr.match(/<[^>]*flurnummer[^>]*>([^<]+)<\//i);
-                if(match && match[1]) {
-                    document.getElementById('flurnummer').value = match[1];
-                } else {
-                    document.getElementById('flurnummer').value = "Keine Flurnummer gefunden. Bitte manuell prüfen.";
-                }
-            } catch (e) {
-                console.error("Proxy failed", e);
-                document.getElementById('flurnummer').value = "Verbindungsfehler zum Proxy. Bitte manuell eintragen.";
-            }
-
-            // API 3: Automated 5km Protected Area Check (Overpass API)
+            // Fetch Protected Area Check (Overpass)
             const statusBox = document.getElementById('protectedAreaStatus');
             statusBox.innerText = "⏳ Prüfe Schutzgebiete (Bitte warten)...";
             statusBox.className = "status-badge status-loading";
@@ -157,7 +140,7 @@
                 }
             } catch (e) {
                 statusBox.innerText = "⚠️ Fehler bei der autom. Prüfung. Standardtext wird verwendet.";
-                statusBox.className = "status-badge status-loading";
+                statusBox.className = "status-badge status-warning";
             }
         }
 
@@ -181,7 +164,7 @@
                         
                         const base64String = canvas.toDataURL('image/jpeg', 0.7).split(',')[1];
                         photoDataArray.push({ data: base64String, width: canvas.width, height: canvas.height });
-                        document.getElementById('photoStatus').innerText = `${photoDataArray.length} Bild(er) erfolgreich komprimiert und bereit.`;
+                        document.getElementById('photoStatus').innerText = `${photoDataArray.length} Bild(er) erfolgreich komprimiert.`;
                     };
                     img.src = e.target.result;
                 };
@@ -224,7 +207,7 @@
                     new Paragraph({ text: "Das Zaunmaterial dient keinem Zweck mehr und ist deshalb als Abfall zu betrachten und zu entsorgen." }),
 
                     new Paragraph({ text: "\nVermuteter Verstoß gegen das Waldgesetz und Kreislaufwirtschaftsgesetz", bold: true }),
-                    new Paragraph({ text: "Zäunungen dienen zum Schutz von Pflanzen, bis zu dem Zeitpunkt, ab dem diese dem Äser von Schalenwild (Reh, Rotwild, Gams) entwachsen sind. Sobald der Zaun nicht mehr seinem Schutzzweck entspricht, die Jungbäume den Schutz durch den Zaun nicht mehr brauchen, muss der Zaun, entspr. § 3 des Kreislaufwirtschaftsgesetzes abgebaut und entsorgt werden." }),
+                    new Paragraph({ text: "Zäunungen dienen zum Schutz von Pflanzen, bis zu dem Zeitpunkt, ab dem diese dem Äser von Schalenwild (Reh, Rotwild, Gams) entwachsen sind. Sobald der Zaun nicht mehr seinem Schutzzweck entspricht, die Jungbäume den Schutz durch den Zaun nicht mehr brauchen, muss der Zaun, entspr. § 3 des Kreislaufwirtschaftsgesetzes abgebaut und entsorgt werden. Wenn der Zaun nur mehr abschnittsweise aufrecht steht, ist davon auszugehen, dass der Schutzzweck des Zauns nicht mehr gegeben ist und er abgebaut werden muss." }),
                     new Paragraph({ text: "\nIn Verlautbarungen des Bayerischen Staatsministeriums für Ernährung, Landwirtschaft und Forsten wird ausdrücklich der private Waldbesitzer darauf hingewiesen: „Ein Wildschutzzaun verliert seine Berechtigung auch dann, wenn er beschädigt oder verfallen ist... Solche Zäune werden nach dem Gesetz ab diesem Moment automatisch zu Abfall... Zäune lediglich zu Boden zu drücken und im Wald zu belassen ist verboten.“" }),
 
                     new Paragraph({ text: "\nNaturschutzrechtliche Bedenken", bold: true }),
